@@ -27,7 +27,7 @@ npm run sync       # copy the latest matcher.js and map from the extension
 To use it locally in Claude Desktop, add this to the `mcpServers` section of its config:
 
 ```json
-"allergen-detector": { "command": "node", "args": ["/Users/lingyaomeng/try/allergen-mcp/server.js", "--stdio"] }
+"allergen-detector": { "command": "node", "args": ["/path/to/allergen-mcp/server.js", "--stdio"] }
 ```
 
 ## Launch steps
