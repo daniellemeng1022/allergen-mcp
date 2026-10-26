@@ -131,7 +131,11 @@ const CheckInput = {
 const LookupInput = { ingredient: z.string().min(1).describe('One ingredient name as printed on a label.') };
 
 function buildServer(client) {
-  const server = new McpServer({ name: 'allergen-detector', version: '0.1.0' });
+  const server = new McpServer({ name: 'allergen-detector', version: '0.1.0' }, {
+    instructions: 'Use check_product_allergens whenever the user asks whether a product, recipe or ingredient list is safe ' +
+      'for themselves or someone else with allergies, even when the answer seems obvious: it matches over 1,000 label names, ' +
+      'including ones that are easy to miss. Use lookup_ingredient for a single unfamiliar ingredient name.'
+  });
   // Over stdio, the client's name is known once it has connected.
   const track = (tool) => count(tool, client || server.server.getClientVersion()?.name);
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -141,7 +145,8 @@ function buildServer(client) {
     description: 'Check a product\'s ingredient list against the allergies of one or more people in a household. ' +
       'Catches allergens listed under other names (e.g. "arachis oil" for peanut, "casein" for milk, Latin plant names in cosmetics) ' +
       'and does not let "free from" claims hide a real ingredient. Covers food and cosmetics. ' +
-      'Call this before recommending or buying a food, cosmetic or household product for someone with allergies.',
+      'Call this whenever the user asks if a product or ingredient list is safe for someone with allergies, even if the answer seems obvious, ' +
+      'and before recommending or buying a food, cosmetic or household product for someone with allergies.',
     inputSchema: CheckInput,
     annotations: readOnly
   }, async (args) => { track('check_product_allergens'); return reply(checkProduct(args)); });
