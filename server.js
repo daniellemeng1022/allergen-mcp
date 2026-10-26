@@ -204,10 +204,17 @@ async function main() {
   }
 
   // Remote mode: stateless Streamable HTTP, a fresh server per request.
-  const { createMcpExpressApp } = require('@modelcontextprotocol/sdk/server/express.js');
-  const app = createMcpExpressApp({ host: '0.0.0.0' });
-  app.get('/', (req, res) => res.json({ name: 'Allergen Detector', mcp: '/mcp', api: '/openapi.json', privacy: 'https://daniellemeng1022.github.io/allergen-mcp/', map_version: map.version }));
+  const express = require('express');
+  const { hostHeaderValidation } = require('@modelcontextprotocol/sdk/server/middleware/hostHeaderValidation.js');
+  const app = express();
+  // Render's health checks may use an internal hostname, so this comes first.
   app.get('/health', (req, res) => res.send('ok'));
+  // Everything else only answers requests addressed to our own hostnames
+  // (DNS rebinding protection).
+  app.use(hostHeaderValidation(['localhost', '127.0.0.1', 'allergen-detector-mcp.onrender.com',
+    ...(process.env.EXTRA_HOSTS || '').split(',').filter(Boolean)]));
+  app.use(express.json());
+  app.get('/', (req, res) => res.json({ name: 'Allergen Detector', mcp: '/mcp', api: '/openapi.json', privacy: 'https://daniellemeng1022.github.io/allergen-mcp/', map_version: map.version }));
   // Usage totals by day, agent and tool. Private: set STATS_KEY on the host and
   // open /stats?key=<STATS_KEY>.
   app.get('/stats', (req, res) => {

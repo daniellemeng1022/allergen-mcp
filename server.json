@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.daniellemeng1022/allergen-detector",
+  "title": "Allergen Detector",
+  "description": "Checks food and cosmetic ingredients against each household member's allergies, including hidden label names.",
+  "repository": { "url": "https://github.com/daniellemeng1022/allergen-mcp", "source": "github" },
+  "websiteUrl": "https://github.com/daniellemeng1022/allergen-mcp",
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://allergen-detector-mcp.onrender.com/mcp",
+      "headers": [
+        { "name": "X-API-Key", "description": "Optional partner key. Not needed for normal use.", "isRequired": false, "isSecret": true }
+      ]
+    }
+  ]
+}
