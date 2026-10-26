@@ -36,6 +36,19 @@ function count(tool, client) {
   const byClient = (usage[day] ||= {})[client] ||= {};
   byClient[tool] = (byClient[tool] || 0) + 1;
   console.error('[usage] ' + JSON.stringify({ day, client, tool }));
+  sendToPostHog(tool, client);
+}
+
+// If POSTHOG_KEY is set, each count is also sent to PostHog for charts that
+// survive restarts. Same fields as above: which agent and which tool, nothing else.
+function sendToPostHog(tool, client) {
+  if (!process.env.POSTHOG_KEY) return;
+  fetch((process.env.POSTHOG_HOST || 'https://us.i.posthog.com') + '/capture/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ api_key: process.env.POSTHOG_KEY, event: tool, distinct_id: client,
+      properties: { client, $process_person_profile: false, $ip: null } })
+  }).catch(() => {});
 }
 
 // Optional API keys, one per partner: API_KEYS="muse=k1,acme=k2". A request
