@@ -12,6 +12,10 @@ It uses the same `matcher.js` and allergen map as the Chrome extension (51 aller
 | `lookup_ingredient` | Tells which allergen an ingredient name belongs to ("sodium caseinate" → milk). |
 | `list_supported_allergens` | Lists the allergens the service covers. |
 
+The same checks are also a plain web API for agents that don't use MCP: `POST /api/check`, `POST /api/lookup` and `GET /api/allergens`, described at `/openapi.json`.
+
+**API keys are optional.** Set `API_KEYS="muse=<key>,acme=<key>"` on the host to give each partner its own key, sent as `X-API-Key` or `Authorization: Bearer`. Requests without a key still work; a wrong key gets a 401. A valid key names the partner in `/stats`.
+
 All tools are read-only and stateless. Nothing about the person (allergens, ingredients) is stored or logged. The only log is an anonymous count of tool calls per day, for measuring traction.
 
 ## Run it
@@ -38,7 +42,7 @@ To use it locally in Claude Desktop, add this to the `mcpServers` section of its
 4. **Submit to the community directories:** Smithery, Glama, PulseMCP and mcp.so.
 5. **Claude:** anyone can add it today as a custom connector by pasting the URL. To appear in Anthropic's connectors directory, submit it through their directory form.
 6. **ChatGPT:** test it in developer mode, then submit it as an app through OpenAI's Apps SDK submission process. This needs a verified developer account.
-7. **Meta Muse (do this first):** submit at muse.ai/platform. Choose "Existing MCP," enter the hosted URL, set authentication to none (or an API key) and payments to "no," then describe the service. Meta tests the live endpoint, so step 1 has to be done first. Muse already shops at Sephora, Walmart, Best Buy and the Shopify catalog, which covers both of our categories (cosmetics and food).
+7. **Meta Muse (do this first):** submit at muse.ai/platform. Choose "Existing MCP," enter the hosted URL, choose "API keys" and give Meta a key from `API_KEYS` (e.g. `muse=…`) so its calls show up as `muse` in `/stats` and payments to "no," then describe the service. Meta tests the live endpoint, so step 1 has to be done first. Muse already shops at Sephora, Walmart, Best Buy and the Shopify catalog, which covers both of our categories (cosmetics and food).
 8. **Instinct and similar assistants:** Instinct doesn't document custom MCP support. It shops through Shopify and Shop Pay. Reach out for a partnership instead.
 9. **Shopping agents:** contact teams building agentic-commerce products and offer the endpoint free during a pilot.
 10. **Measure:** set `STATS_KEY` on the host, then open `https://<your-url>/stats?key=<STATS_KEY>` to see calls by day, agent and tool. A `connect` count is an agent connecting; tool counts are real checks. `/stats` resets when the server restarts, but every count is also a `[usage]` JSON line in the host's logs. Track weekly checks and the number of distinct agents.

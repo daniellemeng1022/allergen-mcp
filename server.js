@@ -37,6 +37,17 @@ function count(tool, client) {
   console.error('[usage] ' + JSON.stringify({ day, client, tool }));
 }
 
+// Optional API keys, one per partner: API_KEYS="muse=k1,acme=k2". A request
+// with no key still works; a request with a wrong key is refused. A valid key
+// names the partner in the usage counts.
+const apiKeys = new Map((process.env.API_KEYS || '').split(',').filter(Boolean)
+  .map(pair => pair.split('=').map(x => x.trim())).filter(([n, k]) => n && k).map(([n, k]) => [k, n]));
+function partnerFor(req) {
+  const key = req.get('x-api-key') || (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!key) return null;
+  return apiKeys.get(key) || false;
+}
+
 // Names the agent behind an HTTP request. The MCP "initialize" message carries
 // the client's own name (e.g. "claude-ai", "openai-mcp"); later requests only
 // have the User-Agent header, so fall back to its first word.
@@ -94,6 +105,31 @@ function checkProduct({ ingredients, household, product_name }) {
   };
 }
 
+function lookupIngredient({ ingredient }) {
+  const keys = Object.keys(map.allergens);
+  const found = M.findMatches(ingredient, keys.map(k => k.replace(/_/g, ' ')), map);
+  return {
+    ingredient,
+    allergens: found.map(m => ({ allergen: m.label, found_as: m.hits.map(h => h.term), why: m.hits.map(h => h.why).filter(Boolean) })),
+    map_version: map.version,
+    disclaimer: DISCLAIMER
+  };
+}
+
+function listAllergens() {
+  const allergens = Object.entries(map.allergens).map(([key, e]) => ({
+    id: key, name: e.label, also_called: e.aliases || [], label_names_known: (e.terms || []).length
+  }));
+  return { count: allergens.length, allergens, map_version: map.version };
+}
+
+const CheckInput = {
+  ingredients: z.string().min(1).describe('The product\'s ingredient list, or the product page text that contains it.'),
+  household: z.array(Person).min(1).describe('One entry per person, each with their allergens.'),
+  product_name: z.string().optional().describe('Product name, for the answer only.')
+};
+const LookupInput = { ingredient: z.string().min(1).describe('One ingredient name as printed on a label.') };
+
 function buildServer(client) {
   const server = new McpServer({ name: 'allergen-detector', version: '0.1.0' });
   // Over stdio, the client's name is known once it has connected.
@@ -106,11 +142,7 @@ function buildServer(client) {
       'Catches allergens listed under other names (e.g. "arachis oil" for peanut, "casein" for milk, Latin plant names in cosmetics) ' +
       'and does not let "free from" claims hide a real ingredient. Covers food and cosmetics. ' +
       'Call this before recommending or buying a food, cosmetic or household product for someone with allergies.',
-    inputSchema: {
-      ingredients: z.string().min(1).describe('The product\'s ingredient list, or the product page text that contains it.'),
-      household: z.array(Person).min(1).describe('One entry per person, each with their allergens.'),
-      product_name: z.string().optional().describe('Product name, for the answer only.')
-    },
+    inputSchema: CheckInput,
     annotations: readOnly
   }, async (args) => { track('check_product_allergens'); return reply(checkProduct(args)); });
 
@@ -118,34 +150,48 @@ function buildServer(client) {
     title: 'Look up an ingredient',
     description: 'Tell which allergens, if any, an ingredient name belongs to, e.g. "sodium caseinate" -> milk, ' +
       '"Prunus amygdalus dulcis oil" -> tree nuts, "DMDM hydantoin" -> formaldehyde releasers.',
-    inputSchema: { ingredient: z.string().min(1).describe('One ingredient name as printed on a label.') },
+    inputSchema: LookupInput,
     annotations: readOnly
-  }, async ({ ingredient }) => {
-    track('lookup_ingredient');
-    const keys = Object.keys(map.allergens);
-    const found = M.findMatches(ingredient, keys.map(k => k.replace(/_/g, ' ')), map);
-    return reply({
-      ingredient,
-      allergens: found.map(m => ({ allergen: m.label, found_as: m.hits.map(h => h.term), why: m.hits.map(h => h.why).filter(Boolean) })),
-      map_version: map.version,
-      disclaimer: DISCLAIMER
-    });
-  });
+  }, async (args) => { track('lookup_ingredient'); return reply(lookupIngredient(args)); });
 
   server.registerTool('list_supported_allergens', {
     title: 'List supported allergens',
     description: 'List the allergens this service can check (food and cosmetic), with the other names users may type for them.',
     inputSchema: {},
     annotations: readOnly
-  }, async () => {
-    track('list_supported_allergens');
-    const allergens = Object.entries(map.allergens).map(([key, e]) => ({
-      id: key, name: e.label, also_called: e.aliases || [], label_names_known: (e.terms || []).length
-    }));
-    return reply({ count: allergens.length, allergens, map_version: map.version });
-  });
+  }, async () => { track('list_supported_allergens'); return reply(listAllergens()); });
 
   return server;
+}
+
+function baseUrl(req) {
+  const proto = req.get('x-forwarded-proto') || req.protocol;
+  return `${proto}://${req.get('host')}`;
+}
+
+// OpenAPI description of the web API, so agent builders can plug it in directly.
+function openApi(url) {
+  const allergenItem = { oneOf: [{ type: 'string' }, { type: 'object', required: ['name'], properties: { name: { type: 'string' }, severity: { type: 'string', enum: ['mild', 'moderate', 'severe'] } } }] };
+  const json = (schema) => ({ required: true, content: { 'application/json': { schema } } });
+  const ok = { 200: { description: 'Result', content: { 'application/json': { schema: { type: 'object' } } } } };
+  return {
+    openapi: '3.1.0',
+    info: { title: 'Allergen Detector API', version: '0.1.0', description: 'Check a food or cosmetic product\'s ingredients against a household\'s allergies. ' + DISCLAIMER },
+    servers: [{ url }],
+    components: { securitySchemes: { apiKey: { type: 'apiKey', in: 'header', name: 'X-API-Key' } } },
+    security: [{}, { apiKey: [] }],
+    paths: {
+      '/api/check': { post: { operationId: 'checkProductAllergens', summary: 'Check a product against each person\'s allergens', requestBody: json({
+        type: 'object', required: ['ingredients', 'household'], properties: {
+          ingredients: { type: 'string', description: 'The ingredient list, or the product page text that contains it.' },
+          household: { type: 'array', minItems: 1, items: { type: 'object', required: ['allergens'], properties: {
+            person: { type: 'string' }, allergens: { type: 'array', minItems: 1, items: allergenItem } } } },
+          product_name: { type: 'string' } } }), responses: ok } },
+      '/api/lookup': { post: { operationId: 'lookupIngredient', summary: 'Which allergens an ingredient name belongs to', requestBody: json({
+        type: 'object', required: ['ingredient'], properties: { ingredient: { type: 'string' } } }), responses: ok } },
+      '/api/allergens': { get: { operationId: 'listSupportedAllergens', summary: 'List the allergens this service covers', responses: ok } }
+    }
+  };
 }
 
 async function main() {
@@ -160,7 +206,7 @@ async function main() {
   // Remote mode: stateless Streamable HTTP, a fresh server per request.
   const { createMcpExpressApp } = require('@modelcontextprotocol/sdk/server/express.js');
   const app = createMcpExpressApp({ host: '0.0.0.0' });
-  app.get('/', (req, res) => res.json({ name: 'Allergen Detector MCP', mcp: '/mcp', map_version: map.version }));
+  app.get('/', (req, res) => res.json({ name: 'Allergen Detector', mcp: '/mcp', api: '/openapi.json', privacy: 'https://daniellemeng1022.github.io/allergen-mcp/', map_version: map.version }));
   app.get('/health', (req, res) => res.send('ok'));
   // Usage totals by day, agent and tool. Private: set STATS_KEY on the host and
   // open /stats?key=<STATS_KEY>.
@@ -168,8 +214,29 @@ async function main() {
     if (!process.env.STATS_KEY || req.query.key !== process.env.STATS_KEY) return res.status(404).end();
     res.json(usage);
   });
+  // Refuse wrong API keys on every endpoint below.
+  app.use(['/mcp', '/api'], (req, res, next) => {
+    const partner = partnerFor(req);
+    if (partner === false) return res.status(401).json({ error: 'Invalid API key' });
+    req.partner = partner;
+    next();
+  });
+
+  // Plain web API, for agents that don't speak MCP (custom shopping agents,
+  // GPT Actions, Muse's "Raw API" option). Same answers as the MCP tools.
+  const rest = (tool, schema, fn) => (req, res) => {
+    const parsed = schema ? z.object(schema).safeParse(req.body || {}) : { success: true, data: {} };
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
+    count(tool, req.partner || clientName(req));
+    res.json(fn(parsed.data));
+  };
+  app.post('/api/check', rest('check_product_allergens', CheckInput, checkProduct));
+  app.post('/api/lookup', rest('lookup_ingredient', LookupInput, lookupIngredient));
+  app.get('/api/allergens', rest('list_supported_allergens', null, listAllergens));
+  app.get('/openapi.json', (req, res) => res.json(openApi(baseUrl(req))));
+
   app.post('/mcp', async (req, res) => {
-    const client = clientName(req);
+    const client = req.partner || clientName(req);
     if ([].concat(req.body || []).some(m => m && m.method === 'initialize')) count('connect', client);
     const server = buildServer(client);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
