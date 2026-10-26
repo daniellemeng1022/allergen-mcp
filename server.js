@@ -217,6 +217,9 @@ async function main() {
   app.get('/health', (req, res) => res.send('ok'));
   app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'favicon.png')));
   app.get('/icon.png', (req, res) => res.sendFile(path.join(__dirname, 'icon.png')));
+  // OpenAI's ChatGPT app submission checks this to verify we own the domain.
+  app.get('/.well-known/openai-apps-challenge', (req, res) =>
+    process.env.OPENAI_APPS_CHALLENGE ? res.type('text').send(process.env.OPENAI_APPS_CHALLENGE) : res.sendStatus(404));
   // Everything else only answers requests addressed to our own hostnames
   // (DNS rebinding protection).
   app.use(hostHeaderValidation(['localhost', '127.0.0.1', 'allergen-detector-mcp.onrender.com',
