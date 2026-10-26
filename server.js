@@ -101,7 +101,6 @@ function checkProduct({ ingredients, household, product_name }) {
     safe_for_everyone: unsafe.length === 0,
     worst_severity: worst,
     people: results,
-    map_version: map.version,
     disclaimer: DISCLAIMER
   };
 }
@@ -112,7 +111,6 @@ function lookupIngredient({ ingredient }) {
   return {
     ingredient,
     allergens: found.map(m => ({ allergen: m.label, found_as: m.hits.map(h => h.term), why: m.hits.map(h => h.why).filter(Boolean) })),
-    map_version: map.version,
     disclaimer: DISCLAIMER
   };
 }
@@ -121,7 +119,7 @@ function listAllergens() {
   const allergens = Object.entries(map.allergens).map(([key, e]) => ({
     id: key, name: e.label, also_called: e.aliases || [], label_names_known: (e.terms || []).length
   }));
-  return { count: allergens.length, allergens, map_version: map.version };
+  return { count: allergens.length, allergens };
 }
 
 const CheckInput = {
