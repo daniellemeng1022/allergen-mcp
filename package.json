@@ -1,0 +1,19 @@
+{
+  "name": "allergen-detector-mcp",
+  "version": "0.1.0",
+  "description": "Allergen Detector MCP server: checks product ingredients against a household's allergies.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "stdio": "node server.js --stdio",
+    "sync": "cp ../chrome_plug_allergen_detector/matcher.js lib/matcher.js && cp ../chrome_plug_allergen_detector/allergen-map.json lib/allergen-map.json",
+    "test": "node test.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "express": "4.21.2",
+    "zod": "3.25.76"
+  }
+}
