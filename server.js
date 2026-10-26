@@ -6,6 +6,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
+const path = require('path');
 const M = require('./lib/matcher.js');
 
 const MAP_URL = 'https://raw.githubusercontent.com/daniellemeng1022/allergen-map/main/allergen-map.json';
@@ -214,6 +215,8 @@ async function main() {
   const app = express();
   // Render's health checks may use an internal hostname, so this comes first.
   app.get('/health', (req, res) => res.send('ok'));
+  app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'favicon.png')));
+  app.get('/icon.png', (req, res) => res.sendFile(path.join(__dirname, 'icon.png')));
   // Everything else only answers requests addressed to our own hostnames
   // (DNS rebinding protection).
   app.use(hostHeaderValidation(['localhost', '127.0.0.1', 'allergen-detector-mcp.onrender.com',
