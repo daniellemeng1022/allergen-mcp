@@ -12,6 +12,18 @@ const M = require('./lib/matcher.js');
 const MAP_URL = 'https://raw.githubusercontent.com/daniellemeng1022/allergen-map/main/allergen-map.json';
 const REFRESH_MS = 24 * 60 * 60 * 1000;
 const DISCLAIMER = 'Informational only, not medical advice. Always read the package label; ingredients and formulas change.';
+// What a "nothing found" answer cannot rule out. Sent with every check so the
+// agent passes it on instead of turning "nothing found" into "safe".
+const LIMITS = [
+  'Only checks the ingredient text it was given; a wrong or incomplete list gives a wrong answer.',
+  'Does not see cross-contact or "may contain" risks unless they are in that text.',
+  'Formulas change; the label in hand is the final word.',
+  'People with severe allergies should confirm with their doctor or allergist.'
+];
+// Rules for the agent relaying our answers to a person.
+const AGENT_RULES = 'When relaying results: never call a product "safe"; say whether listed allergens were found and pass on the limits. ' +
+  'Never give medication, dosing or treatment advice (including antihistamines or epinephrine), and never suggest hiding ' +
+  'anything from a doctor. If someone may be having a reaction, tell them to use their emergency plan and call emergency services.';
 
 // Start from the bundled map, then pick up newer published versions daily,
 // the same way the extension does.
@@ -94,7 +106,8 @@ function checkProduct({ ingredients, household, product_name }) {
     const matches = M.findMatches(ingredients, p.allergens.map(asLine), map);
     return {
       person: p.person || (household.length === 1 ? 'user' : `person ${i + 1}`),
-      safe: matches.length === 0,
+      safe: matches.length === 0, // kept for existing clients; prefer no_listed_allergens_found
+      no_listed_allergens_found: matches.length === 0,
       alerts: matches.map(m => ({
         allergen: m.label,
         severity: m.severity,
@@ -111,9 +124,11 @@ function checkProduct({ ingredients, household, product_name }) {
     verdict: unsafe.length === 0
       ? 'No listed allergens found in these ingredients.'
       : `Contains allergens for ${unsafe.map(r => r.person).join(', ')} (worst: ${worst}).`,
-    safe_for_everyone: unsafe.length === 0,
+    safe_for_everyone: unsafe.length === 0, // kept for existing clients; prefer no_listed_allergens_found
+    no_listed_allergens_found: unsafe.length === 0,
     worst_severity: worst,
     people: results,
+    limits: LIMITS,
     disclaimer: DISCLAIMER
   };
 }
@@ -145,7 +160,7 @@ const LookupInput = { ingredient: z.string().min(1).describe('One ingredient nam
 function buildServer(client) {
   const server = new McpServer({ name: 'allergen-detector', version: '0.1.0' }, {
     instructions: 'Use check_product_allergens when the user asks whether a product, recipe or ingredient list is safe ' +
-      'for someone with allergies. Use lookup_ingredient for a single ingredient name.'
+      'for someone with allergies. Use lookup_ingredient for a single ingredient name. ' + AGENT_RULES
   });
   // Over stdio, the client's name is known once it has connected.
   const track = (tool) => count(tool, client || server.server.getClientVersion()?.name);
@@ -156,7 +171,8 @@ function buildServer(client) {
     description: 'Check a product\'s ingredient list against the allergies of one or more people in a household. ' +
       'Catches allergens listed under other names (e.g. "arachis oil" for peanut, "casein" for milk, Latin plant names in cosmetics) ' +
       'and does not let "free from" claims hide a real ingredient. Covers food and cosmetics. ' +
-      'Use when the user asks if a product or ingredient list is safe for someone with allergies.',
+      'Use when the user asks if a product or ingredient list is safe for someone with allergies. ' +
+      'A result with no listed allergens is not a promise of safety: relay the limits, and never call the product "safe".',
     inputSchema: CheckInput,
     annotations: readOnly
   }, async (args) => { track('check_product_allergens'); return reply(checkProduct(args)); });

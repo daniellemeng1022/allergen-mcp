@@ -36,6 +36,8 @@ const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio
     household: [{ allergens: ['milk'] }]
   });
   assert.strictEqual(r.safe_for_everyone, true, 'coconut milk is not milk');
+  assert.strictEqual(r.no_listed_allergens_found, true);
+  assert.ok(r.limits.some(l => /may contain/.test(l)), 'a clean result must carry its limits');
 
   r = await call('lookup_ingredient', { ingredient: 'Prunus Amygdalus Dulcis (Sweet Almond) Oil' });
   assert.ok(r.allergens.some(a => /nut/i.test(a.allergen)));
