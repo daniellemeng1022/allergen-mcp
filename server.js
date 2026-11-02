@@ -8,6 +8,7 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 const { z } = require('zod');
 const path = require('path');
 const M = require('./lib/matcher.js');
+const { inferLanguages } = require('./lib/languages.js');
 
 const MAP_URL = 'https://raw.githubusercontent.com/daniellemeng1022/allergen-map/main/allergen-map.json';
 const REFRESH_MS = 24 * 60 * 60 * 1000;
@@ -22,6 +23,7 @@ const LIMITS = [
 ];
 // Rules for the agent relaying our answers to a person.
 const AGENT_RULES = 'When relaying results: never call a product "safe"; say whether listed allergens were found and pass on the limits. ' +
+  'If other_language_words_not_counted is not empty, mention those words so the person can check them. ' +
   'Never give medication, dosing or treatment advice (including antihistamines or epinephrine), and never suggest hiding ' +
   'anything from a doctor. If someone may be having a reaction, tell them to use their emergency plan and call emergency services.';
 
@@ -101,9 +103,20 @@ function reply(data) {
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }], structuredContent: data };
 }
 
-function checkProduct({ ingredients, household, product_name }) {
+// Words the language check set aside, so a wrong guess about the language is
+// visible to the agent and not a silent miss.
+function notCounted(text, entries, matches) {
+  const counted = new Set(matches.flatMap(m => m.hits.map(h => `${m.label}|${h.term}`)));
+  return M.findMatches(text, entries, map).flatMap(m => m.hits
+    .filter(h => !counted.has(`${m.label}|${h.term}`))
+    .map(h => ({ allergen: m.label, word: h.term })));
+}
+
+function checkProduct({ ingredients, household, product_name, language }) {
+  const langs = inferLanguages(ingredients, language);
   const results = household.map((p, i) => {
-    const matches = M.findMatches(ingredients, p.allergens.map(asLine), map);
+    const entries = p.allergens.map(asLine);
+    const matches = M.findMatches(ingredients, entries, map, langs);
     return {
       person: p.person || (household.length === 1 ? 'user' : `person ${i + 1}`),
       safe: matches.length === 0, // kept for existing clients; prefer no_listed_allergens_found
@@ -114,7 +127,8 @@ function checkProduct({ ingredients, household, product_name }) {
         found_as: m.hits.map(h => h.term),
         why: m.hits.map(h => h.why).filter(Boolean),
         label_claims: m.claim || undefined
-      }))
+      })),
+      other_language_words_not_counted: notCounted(ingredients, entries, matches)
     };
   });
   const unsafe = results.filter(r => !r.safe);
@@ -127,15 +141,18 @@ function checkProduct({ ingredients, household, product_name }) {
     safe_for_everyone: unsafe.length === 0, // kept for existing clients; prefer no_listed_allergens_found
     no_listed_allergens_found: unsafe.length === 0,
     worst_severity: worst,
+    languages_assumed: langs || undefined,
     people: results,
     limits: LIMITS,
     disclaimer: DISCLAIMER
   };
 }
 
-function lookupIngredient({ ingredient }) {
+// One word gives no way to tell its language, so every language counts unless
+// the caller says which one.
+function lookupIngredient({ ingredient, language }) {
   const keys = Object.keys(map.allergens);
-  const found = M.findMatches(ingredient, keys.map(k => k.replace(/_/g, ' ')), map);
+  const found = M.findMatches(ingredient, keys.map(k => k.replace(/_/g, ' ')), map, language ? [language] : undefined);
   return {
     ingredient,
     allergens: found.map(m => ({ allergen: m.label, found_as: m.hits.map(h => h.term), why: m.hits.map(h => h.why).filter(Boolean) })),
@@ -150,12 +167,14 @@ function listAllergens() {
   return { count: allergens.length, allergens };
 }
 
+const Language = z.string().optional().describe('Language of the text, if known, e.g. "fr". Optional; helps short words in other languages be read correctly.');
 const CheckInput = {
   ingredients: z.string().min(1).describe('The product\'s ingredient list, or the product page text that contains it.'),
   household: z.array(Person).min(1).describe('One entry per person, each with their allergens.'),
-  product_name: z.string().optional().describe('Product name, for the answer only.')
+  product_name: z.string().optional().describe('Product name, for the answer only.'),
+  language: Language
 };
-const LookupInput = { ingredient: z.string().min(1).describe('One ingredient name as printed on a label.') };
+const LookupInput = { ingredient: z.string().min(1).describe('One ingredient name as printed on a label.'), language: Language };
 
 function buildServer(client) {
   const server = new McpServer({ name: 'allergen-detector', version: '0.1.0' }, {
@@ -217,9 +236,9 @@ function openApi(url) {
           ingredients: { type: 'string', description: 'The ingredient list, or the product page text that contains it.' },
           household: { type: 'array', minItems: 1, items: { type: 'object', required: ['allergens'], properties: {
             person: { type: 'string' }, allergens: { type: 'array', minItems: 1, items: allergenItem } } } },
-          product_name: { type: 'string' } } }), responses: ok } },
+          product_name: { type: 'string' }, language: { type: 'string', description: 'Language of the text, if known, e.g. "fr".' } } }), responses: ok } },
       '/api/lookup': { post: { operationId: 'lookupIngredient', summary: 'Which allergens an ingredient name belongs to', requestBody: json({
-        type: 'object', required: ['ingredient'], properties: { ingredient: { type: 'string' } } }), responses: ok } },
+        type: 'object', required: ['ingredient'], properties: { ingredient: { type: 'string' }, language: { type: 'string', description: 'Language of the name, if known, e.g. "fr".' } } }), responses: ok } },
       '/api/allergens': { get: { operationId: 'listSupportedAllergens', summary: 'List the allergens this service covers', responses: ok } }
     }
   };

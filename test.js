@@ -39,6 +39,50 @@ const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio
   assert.strictEqual(r.no_listed_allergens_found, true);
   assert.ok(r.limits.some(l => /may contain/.test(l)), 'a clean result must carry its limits');
 
+  // Language gate: a short word only counts on text in its own language.
+  const words = (x) => x.people[0].alerts.flatMap(a => a.found_as).map(w => w.toLowerCase());
+  r = await call('check_product_allergens', {
+    ingredients: 'Ingredients: sugar, salt, rice. Made in Malta.',
+    household: [{ allergens: ['gluten'] }]
+  });
+  assert.ok(!words(r).includes('malta'), 'Malta on an English label is not malt');
+  assert.ok(r.people[0].other_language_words_not_counted.some(w => w.word.toLowerCase() === 'malta'), 'a skipped word must be reported');
+
+  r = await call('check_product_allergens', {
+    ingredients: 'Ingredientes: agua, malta de cebada, azúcar',
+    household: [{ allergens: ['gluten'] }]
+  });
+  assert.ok(words(r).includes('malta'), 'malta on a Spanish label is malt');
+
+  r = await call('check_product_allergens', {
+    ingredients: 'Ingrédients : farine, lait écrémé, sucre',
+    household: [{ allergens: ['milk'] }]
+  });
+  assert.ok(words(r).includes('lait'), 'lait on a French label is milk');
+
+  r = await call('check_product_allergens', {
+    ingredients: 'rice, salt, maito',
+    household: [{ allergens: ['milk'] }],
+    language: 'fi'
+  });
+  assert.ok(words(r).includes('maito'), 'the language the caller gives always counts');
+
+  r = await call('check_product_allergens', {
+    ingredients: 'vatten, tomat, lök, vitlök, räkor',
+    household: [{ allergens: ['shellfish'] }]
+  });
+  assert.strictEqual(r.no_listed_allergens_found, false, 'a short list with no label must not lose a real word');
+
+  // Typed in Chinese, found on a label in another language.
+  r = await call('check_product_allergens', {
+    ingredients: 'Ingredients: sugar, almond, salt',
+    household: [{ allergens: ['杏仁'] }]
+  });
+  assert.strictEqual(r.no_listed_allergens_found, false, 'an allergen typed in Chinese must work on an English label');
+
+  r = await call('lookup_ingredient', { ingredient: 'lait' });
+  assert.ok(r.allergens.length > 0, 'a lookup with no language checks every language');
+
   r = await call('lookup_ingredient', { ingredient: 'Prunus Amygdalus Dulcis (Sweet Almond) Oil' });
   assert.ok(r.allergens.some(a => /nut/i.test(a.allergen)));
 

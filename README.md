@@ -2,7 +2,9 @@
 
 The Allergen Detector matching engine as an MCP server, so AI assistants and shopping agents (ChatGPT, Claude, and others) can check a product against a household's allergies before recommending or buying it.
 
-It uses the same `matcher.js` and allergen map as the Chrome extension (51 allergens, 1,078 names). The map refreshes daily from GitHub, so map updates reach agents with no redeploy.
+It uses the same `matcher.js` and allergen map as the Chrome extension (51 allergens, 3,446 names in 24 languages). The map refreshes daily from GitHub, so map updates reach agents with no redeploy.
+
+A short word that is an allergen in one language and an everyday word in another ("ou", "malta") only counts on text in its own language. The server infers the language from the "Ingredients" label word and, on text of 12 words or more, a detector; agents can also pass `language`. Short text with no label is not filtered. Words set aside are returned in `other_language_words_not_counted`, and `languages_assumed` shows the inference.
 
 ## Tools
 
