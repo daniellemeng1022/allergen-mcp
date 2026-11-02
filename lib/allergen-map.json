@@ -1,5 +1,5 @@
 {
-  "version": 2026110102,
+  "version": 2026110201,
   "updated": "2026-11-01",
   "note": "Seed map drafted by an AI agent (Claude) on 2026-10-05. Covers FDA Big 9, EU 14 food allergens, Japan's buckwheat, latex, common cosmetic allergens and the T.R.U.E. Test patch series. Needs founder review before it is relied on. Grow it with tools/build_map.py.",
   "allergens": {
