@@ -264,6 +264,12 @@ async function main() {
   // OpenAI's ChatGPT app submission checks this to verify we own the domain.
   app.get('/.well-known/openai-apps-challenge', (req, res) =>
     process.env.OPENAI_APPS_CHALLENGE ? res.type('text').send(process.env.OPENAI_APPS_CHALLENGE) : res.sendStatus(404));
+  // Meta Muse's connector submission does the same. MUSE_CHALLENGE holds the
+  // whole file contents, "muse-challenge=<token>", and <token> is also the path.
+  app.get('/.well-known/muse-challenge/:token', (req, res) => {
+    const challenge = process.env.MUSE_CHALLENGE || '';
+    challenge && challenge === `muse-challenge=${req.params.token}` ? res.type('text').send(challenge) : res.sendStatus(404);
+  });
   // Everything else only answers requests addressed to our own hostnames
   // (DNS rebinding protection).
   app.use(hostHeaderValidation(['localhost', '127.0.0.1', 'allergen-detector-mcp.onrender.com',
